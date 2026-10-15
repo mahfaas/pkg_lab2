@@ -20,7 +20,7 @@ self.onmessage = function(e) {
     const results = [];
     for (const file of files) {
       try {
-        const meta = parseImageFile(file.buffer, file.name, file.ext, file.size);
+        const meta = parseImageFile(file.buffer, file.tail, file.name, file.ext, file.size);
         results.push(meta);
       } catch (err) {
         results.push({

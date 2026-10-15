@@ -41,8 +41,6 @@ document.addEventListener('DOMContentLoaded', () => {
   dom = {
     dropZone: $('drop-zone'),
     fileInput: $('file-input'),
-    folderInput: $('folder-input'),
-    btnFolder: $('btn-folder'),
     btnFiles: $('btn-files'),
     btnClear: $('btn-clear'),
     btnExport: $('btn-export'),
@@ -130,8 +128,12 @@ function dispatchNext() {
     if (!worker.busy && taskQueue.length > 0) {
       const batch = taskQueue.shift();
       worker.busy = true;
-      worker.postMessage({ type: 'PROCESS_BATCH', files: batch.files, batchIndex: batch.batchIndex },
-        batch.files.map(f => f.buffer)); // Transferable для скорости
+      const transfers = [];
+      for (const f of batch.files) {
+        if (f.buffer) transfers.push(f.buffer);
+        if (f.tail) transfers.push(f.tail);
+      }
+      worker.postMessage({ type: 'PROCESS_BATCH', files: batch.files, batchIndex: batch.batchIndex }, transfers);
       pendingBatches++;
     }
   }
@@ -195,31 +197,47 @@ async function processFiles(fileList) {
 }
 
 /**
- * Читает только первые HEADER_READ_BYTES байт каждого файла в батче.
- * Lazy loading — не грузим файлы целиком!
+ * Читает только первые HEADER_READ_BYTES байт + последние HEADER_TAIL_BYTES байт
+ * каждого файла в батче. Lazy loading — не грузим файлы целиком!
+ * Хвост нужен для валидации «концовки» файла (IEND у PNG, EOI у JPEG,
+ * Trailer у GIF, VGA-палитра у PCX), которые физически лежат в конце файла.
  */
 async function readBatchHeaders(files) {
+  const HEADER_TAIL_BYTES = 65536; // последние 64KB — достаточно для любых концовок
   const promises = files.map(file => {
     return new Promise((resolve) => {
-      const slice = file.slice(0, CONFIG.HEADER_READ_BYTES);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        resolve({
-          name: file.name,
-          ext: '.' + file.name.split('.').pop(),
-          size: file.size,
-          buffer: e.target.result, // ArrayBuffer
-        });
+      const start = file.slice(0, CONFIG.HEADER_READ_BYTES);
+      const endStart = Math.max(0, file.size - HEADER_TAIL_BYTES);
+      const end = endStart < CONFIG.HEADER_READ_BYTES ? null : file.slice(endStart, file.size);
+
+      let startBuf = null;
+      let endBuf = null;
+      let done = 0;
+      const maybeResolve = () => {
+        if (done === 2) {
+          resolve({
+            name: file.name,
+            ext: '.' + file.name.split('.').pop(),
+            size: file.size,
+            buffer: startBuf,   // ArrayBuffer (начало)
+            tail: endBuf,       // ArrayBuffer (конец) — может быть null
+          });
+        }
       };
-      reader.onerror = () => {
-        resolve({
-          name: file.name,
-          ext: '.' + file.name.split('.').pop(),
-          size: file.size,
-          buffer: new ArrayBuffer(0),
-        });
-      };
-      reader.readAsArrayBuffer(slice);
+
+      const r1 = new FileReader();
+      r1.onload = (e) => { startBuf = e.target.result; done++; maybeResolve(); };
+      r1.onerror = () => { startBuf = new ArrayBuffer(0); done++; maybeResolve(); };
+      r1.readAsArrayBuffer(start);
+
+      if (end) {
+        const r2 = new FileReader();
+        r2.onload = (e) => { endBuf = e.target.result; done++; maybeResolve(); };
+        r2.onerror = () => { endBuf = new ArrayBuffer(0); done++; maybeResolve(); };
+        r2.readAsArrayBuffer(end);
+      } else {
+        done++;
+      }
     });
   });
   return Promise.all(promises);
@@ -457,9 +475,8 @@ function initEventListeners() {
 
   dom.dropZone.addEventListener('click', () => dom.fileInput.click());
 
-  // Выбор файлов
+  // Выбор файлов (или папки через drag&drop — браузер сам разворачивает файлы из папки)
   dom.fileInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
-  dom.folderInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
 
   dom.btnFiles.addEventListener('click', () => dom.fileInput.click());
 
@@ -475,7 +492,6 @@ function initEventListeners() {
     dom.btnClear.disabled = true;
     dom.btnExport.disabled = true;
     dom.fileInput.value = '';
-    dom.folderInput.value = '';
     state.isProcessing = false;
   });
 

@@ -44,9 +44,9 @@
   <section class="upload-section" aria-label="Загрузка файлов">
     <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
          aria-label="Перетащите файлы сюда, или нажмите для выбора">
-      <span class="drop-icon" aria-hidden="true">🖼️</span>
       <h2>Перетащите файлы изображений сюда</h2>
-      <p>Или нажмите кнопку ниже. Поддерживается до 100 000 файлов одновременно — читаются только заголовки.</p>
+      <p>Можно выбрать один или несколько файлов, либо перетащить целую папку.
+         Читаются только заголовки (первые и последние байты) — файлы целиком не загружаются.</p>
 
       <div class="format-chips" aria-label="Поддерживаемые форматы">
         <span class="chip">JPEG</span>
@@ -59,16 +59,13 @@
 
       <div class="upload-actions">
         <button id="btn-files" class="btn btn-primary" type="button">
-          🖼️ Выбрать файлы
+          Выбрать файлы
         </button>
       </div>
 
       <!-- Скрытый input для файлов -->
       <input id="file-input" type="file" multiple accept=".jpg,.jpeg,.png,.bmp,.gif,.tif,.tiff,.pcx"
              class="sr-only" aria-label="Выбор файлов" />
-      <!-- Скрытый input для папки (нужен только для обратной совместимости кода) -->
-      <input id="folder-input" type="file" multiple webkitdirectory directory
-             class="sr-only" aria-label="Выбор папки (скрыт)" />
     </div>
   </section>
 

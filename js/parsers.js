@@ -40,7 +40,7 @@ function readI32BE(buf, off) {
  *   unitSpecifier=1 → метры; DPI = значение * 0.0254
  * Валидность: последний чанк должен быть IEND
  */
-function parsePNG(buf, fileSize) {
+function parsePNG(buf, tail, fileSize) {
   const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
   for (let i = 0; i < 8; i++) {
     if (buf[i] !== PNG_SIG[i]) return { error: 'Неверная сигнатура PNG' };
@@ -93,12 +93,15 @@ function parsePNG(buf, fileSize) {
     offset += 4 + 4 + chunkLen + 4;
   }
 
-  // Валидация: ищем IEND в конце
+  // Валидация: ищем IEND в конце файла.
   // IEND chunk: 00 00 00 00 49 45 4E 44 AE 42 60 82
+  // Проверяем по хвостовому буферу (последние байты файла), а не по началу,
+  // потому что читаем только первые 64KB и большие файлы физически не влезают.
   let hasIEND = false;
-  if (buf.length >= 12) {
-    const tail = buf.slice(buf.length - 12);
-    hasIEND = tail[4] === 0x49 && tail[5] === 0x45 && tail[6] === 0x4E && tail[7] === 0x44;
+  const endBuf = (tail && tail.length > 0) ? tail : buf;
+  if (endBuf.length >= 12) {
+    const t = endBuf.slice(endBuf.length - 12);
+    hasIEND = t[4] === 0x49 && t[5] === 0x45 && t[6] === 0x4E && t[7] === 0x44;
   }
 
   return {
@@ -131,7 +134,7 @@ function parsePNG(buf, fileSize) {
  * Матрица квантования — в сегменте DQT (FF DB)
  * Валидность: файл должен заканчиваться маркером EOI = FF D9
  */
-function parseJPEG(buf, fileSize) {
+function parseJPEG(buf, tail, fileSize) {
   if (buf[0] !== 0xFF || buf[1] !== 0xD8) return { error: 'Неверная сигнатура JPEG' };
 
   let width = null, height = null, precision = null, components = null;
@@ -228,11 +231,12 @@ function parseJPEG(buf, fileSize) {
     if (segLen < 2) break;
   }
 
-  // Валидация: последние 2 байта файла должны быть FF D9
-  // Мы читаем только начало файла, так что проверим в конце буфера
+  // Валидация: последние 2 байта файла должны быть FF D9 (EOI).
+  // Читаем только начало файла, поэтому конец берём из хвостового буфера.
   let hasEOI = false;
-  if (buf.length >= 2) {
-    hasEOI = buf[buf.length - 2] === 0xFF && buf[buf.length - 1] === 0xD9;
+  const endBuf = (tail && tail.length > 0) ? tail : buf;
+  if (endBuf.length >= 2) {
+    hasEOI = endBuf[endBuf.length - 2] === 0xFF && endBuf[endBuf.length - 1] === 0xD9;
   }
 
   if (width === null) return { error: 'SOF-маркер не найден' };
@@ -387,7 +391,7 @@ function parseBMP(buf, fileSize) {
  * DPI в GIF не хранится (нет такого поля)
  * Глубина цвета: ColorResolution + 1 бит
  */
-function parseGIF(buf, fileSize) {
+function parseGIF(buf, tail, fileSize) {
   const sig = String.fromCharCode(buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
   if (sig !== 'GIF87a' && sig !== 'GIF89a') return { error: 'Неверная сигнатура GIF' };
   if (buf.length < 13) return { error: 'Слишком маленький заголовок GIF', damaged: 'Усечённый заголовок' };
@@ -439,8 +443,10 @@ function parseGIF(buf, fileSize) {
   }
   animated = frameCount > 1;
 
-  // Валидация: последний байт должен быть 0x3B (Trailer)
-  const hasTrailer = buf[buf.length - 1] === 0x3B;
+  // Валидация: последний байт должен быть 0x3B (Trailer).
+  // Смотрим в конец файла (хвостовой буфер), т.к. файл может быть больше 64KB.
+  const endBuf = (tail && tail.length > 0) ? tail : buf;
+  const hasTrailer = endBuf.length > 0 && endBuf[endBuf.length - 1] === 0x3B;
 
   return {
     format: 'GIF',
@@ -607,7 +613,7 @@ function parseTIFF(buf, fileSize) {
  * Height = YMax - YMin + 1
  * BitsPerPixel_total = BitsPerPixel * NPlanes
  */
-function parsePCX(buf, fileSize) {
+function parsePCX(buf, tail, fileSize) {
   if (buf[0] !== 0x0A) return { error: 'Неверная сигнатура PCX (ожидался 0x0A)' };
   if (buf.length < 128) return { error: 'Слишком маленький заголовок PCX', damaged: 'Усечённый заголовок' };
 
@@ -633,9 +639,11 @@ function parsePCX(buf, fileSize) {
     4: 'PCX для Windows', 5: 'PCX 3.0+'
   };
 
-  // Палитра VGA 256 цветов хранится в конце файла (768 байт, предваряется 0x0C)
+  // Палитра VGA 256 цветов хранится в конце файла (768 байт, предваряется 0x0C).
+  // Смотрим в конец файла (хвостовой буфер).
+  const endBuf = (tail && tail.length > 0) ? tail : buf;
   let has256Palette = false;
-  if (buf.length >= 769 && buf[buf.length - 769] === 0x0C) {
+  if (endBuf.length >= 769 && endBuf[endBuf.length - 769] === 0x0C) {
     has256Palette = true;
   }
 
@@ -687,13 +695,15 @@ function detectFormat(buf) {
 /**
  * Парсит ArrayBuffer файла и возвращает метаданные.
  * @param {ArrayBuffer} arrayBuffer — только ПЕРВЫЕ байты файла (для скорости)
+ * @param {ArrayBuffer} tailBuffer — ПОСЛЕДНИЕ байты файла (для валидации IEND/EOI/Trailer/палитры)
  * @param {string} fileName — имя файла
  * @param {string} fileExt — расширение (для проверки подмены)
  * @param {number} fileSize — полный размер файла в байтах
  * @returns {Object} метаданные
  */
-function parseImageFile(arrayBuffer, fileName, fileExt, fileSize) {
+function parseImageFile(arrayBuffer, tailBuffer, fileName, fileExt, fileSize) {
   const buf = new Uint8Array(arrayBuffer);
+  const tail = tailBuffer ? new Uint8Array(tailBuffer) : null;
   const realFormat = detectFormat(buf);
   const declaredExt = fileExt.toLowerCase().replace('.', '');
 
@@ -708,12 +718,12 @@ function parseImageFile(arrayBuffer, fileName, fileExt, fileSize) {
   let result;
   try {
     switch (realFormat || declaredFormat) {
-      case 'jpeg': result = parseJPEG(buf, fileSize); break;
-      case 'png':  result = parsePNG(buf, fileSize);  break;
+      case 'jpeg': result = parseJPEG(buf, tail, fileSize); break;
+      case 'png':  result = parsePNG(buf, tail, fileSize);  break;
       case 'bmp':  result = parseBMP(buf, fileSize);  break;
-      case 'gif':  result = parseGIF(buf, fileSize);  break;
+      case 'gif':  result = parseGIF(buf, tail, fileSize);  break;
       case 'tiff': result = parseTIFF(buf, fileSize); break;
-      case 'pcx':  result = parsePCX(buf, fileSize);  break;
+      case 'pcx':  result = parsePCX(buf, tail, fileSize);  break;
       default:
         result = { error: `Неизвестный формат (${declaredExt})` };
     }
