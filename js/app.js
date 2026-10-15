@@ -158,9 +158,8 @@ async function processFiles(fileList) {
     return;
   }
 
-  // Сброс состояния
-  state.allResults = [];
-  state.filteredResults = [];
+  // Настройка прогона: НЕ сбрасываем прошлые результаты — новые файлы ДОБАВЛЯЮТСЯ к таблице.
+  // Кнопка «Очистить» полностью сбрасывает всё.
   state.processedFiles = 0;
   state.totalFiles = supported.length;
   state.startTime = performance.now();
@@ -173,7 +172,8 @@ async function processFiles(fileList) {
   dom.progressSection.classList.remove('hidden');
   dom.emptyState.classList.add('hidden');
   dom.resultSection.classList.remove('hidden');
-  dom.tableBody.innerHTML = '';
+  // Очищаем тело таблицы только при первой загрузке; при добавлении файлов — дополняем
+  if (state.allResults.length === 0) dom.tableBody.innerHTML = '';
   dom.statsBar.classList.remove('hidden');
   dom.btnClear.disabled = false;
   dom.btnExport.disabled = true;
@@ -194,6 +194,9 @@ async function processFiles(fileList) {
 
   // Запускаем воркеры
   dispatchNext();
+
+  // Сбрасываем input, чтобы можно было выбрать те же файлы повторно
+  dom.fileInput.value = '';
 }
 
 /**
@@ -284,10 +287,13 @@ function updateStatsBadges() {
 // ─── Отрисовка результатов ────────────────────────────────────────────────────
 function renderIncomingResults(results) {
   state.allResults.push(...results);
-  // Применяем текущие фильтры/сортировку только на первые результаты
-  // Для скорости — инкрементальная отрисовка
-  if (!state.filterText && state.filterStatus === 'all') {
+  const defaultSort = state.sortCol === 'fileName' && state.sortDir === 'asc';
+  if (!state.filterText && state.filterStatus === 'all' && defaultSort) {
+    // Быстрая инкрементальная отрисовка новых строк
     appendRowsToTable(results);
+  } else {
+    // Активны фильтр/сортировка — перерисовываем всю таблицу заново
+    applyFiltersAndSort();
   }
   updateStatsBadges();
   dom.paginationInfo.textContent = `${state.allResults.length} записей`;
@@ -461,15 +467,67 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+// ─── Сбор файлов из drag&drop (файлы + рекурсивный обход папок) ───────────────
+// Используем File System Access API (webkitGetAsEntry): папки разворачиваются
+// рекурсивно, поэтому можно перетащить каталог с десятками тысяч файлов.
+function collectDroppedFiles(dt) {
+  return new Promise(async (resolve) => {
+    try {
+      const items = dt.items;
+      if (!items || !items.length) {
+        // Fallback: браузер уже дал готовый список файлов
+        resolve(Array.from(dt.files));
+        return;
+      }
+      const entries = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry) entries.push(entry);
+        else if (item.getAsFile) entries.push({ isFile: true, file: (cb) => cb(item.getAsFile()) });
+      }
+      const files = [];
+
+      const readAllDirEntries = (dirReader) => new Promise((res) => {
+        const acc = [];
+        const next = () => {
+          dirReader.readEntries((batch) => {
+            if (!batch.length) { res(acc); return; }
+            acc.push(...batch);
+            next();
+          }, () => res(acc));
+        };
+        next();
+      });
+
+      const walk = async (entry) => {
+        if (entry.isFile) {
+          await new Promise((res) => entry.file((f) => { files.push(f); res(); }, () => res()));
+        } else if (entry.isDirectory) {
+          const reader = entry.createReader();
+          const batch = await readAllDirEntries(reader);
+          for (const child of batch) await walk(child);
+        }
+      };
+
+      for (const entry of entries) await walk(entry);
+      resolve(files);
+    } catch (err) {
+      console.error('collectDroppedFiles error:', err);
+      resolve(Array.from(dt.files));
+    }
+  });
+}
+
 // ─── UI — обработчики событий ─────────────────────────────────────────────────
 function initEventListeners() {
   // Drag & Drop
   dom.dropZone.addEventListener('dragover', e => { e.preventDefault(); dom.dropZone.classList.add('drag-over'); });
   dom.dropZone.addEventListener('dragleave', () => dom.dropZone.classList.remove('drag-over'));
-  dom.dropZone.addEventListener('drop', e => {
+  dom.dropZone.addEventListener('drop', async e => {
     e.preventDefault();
     dom.dropZone.classList.remove('drag-over');
-    const files = e.dataTransfer.files;
+    const files = await collectDroppedFiles(e.dataTransfer);
     if (files.length) processFiles(files);
   });
 
@@ -478,7 +536,7 @@ function initEventListeners() {
   // Выбор файлов (или папки через drag&drop — браузер сам разворачивает файлы из папки)
   dom.fileInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
 
-  dom.btnFiles.addEventListener('click', () => dom.fileInput.click());
+  dom.btnFiles.addEventListener('click', (e) => { e.stopPropagation(); dom.fileInput.click(); });
 
   // Очистка
   dom.btnClear.addEventListener('click', () => {
