@@ -44,7 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
   dom = {
     dropZone: $('drop-zone'),
     fileInput: $('file-input'),
+    folderInput: $('folder-input'),
     btnFiles: $('btn-files'),
+    btnFolder: $('btn-folder'),
     btnClear: $('btn-clear'),
     btnExport: $('btn-export'),
     progressSection: $('progress-section'),
@@ -558,6 +560,15 @@ function initEventListeners() {
   });
 
   dom.btnFiles.addEventListener('click', (e) => { e.stopPropagation(); dom.fileInput.click(); });
+
+  // Выбор целой папки: webkitdirectory раскрывает каталог рекурсивно и отдаёт
+  // все файлы (с их относительными путями). processFiles отфильтрует по расширению.
+  dom.folderInput.addEventListener('change', e => {
+    if (e.target.files.length) processFiles(e.target.files);
+    e.target.value = '';
+  });
+
+  dom.btnFolder.addEventListener('click', (e) => { e.stopPropagation(); dom.folderInput.click(); });
 
   // Очистка: сбрасываем всё, включая очередь отложенных загрузок, чтобы после
   // очистки не всплыли файлы, поставленные в очередь во время обработки.

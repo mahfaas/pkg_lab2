@@ -61,11 +61,18 @@
         <button id="btn-files" class="btn btn-primary" type="button">
           Выбрать файлы
         </button>
+        <button id="btn-folder" class="btn btn-secondary" type="button">
+          📁 Выбрать папку
+        </button>
       </div>
 
       <!-- Скрытый input для файлов -->
       <input id="file-input" type="file" multiple accept=".jpg,.jpeg,.png,.bmp,.gif,.tif,.tiff,.pcx"
              class="sr-only" aria-label="Выбор файлов" />
+
+      <!-- Скрытый input для папки: webkitdirectory раскрывает каталог рекурсивно -->
+      <input id="folder-input" type="file" webkitdirectory directory multiple
+             class="sr-only" aria-label="Выбор папки" />
     </div>
   </section>
 
