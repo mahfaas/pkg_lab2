@@ -30,6 +30,9 @@ let state = {
   totalFiles: 0,
   processedFiles: 0,
   startTime: 0,
+  // Очередь загрузок: если обработка уже идёт, новые файлы встают сюда и
+  // обрабатываются сразу после завершения текущей загрузки (ничего не теряется).
+  pendingLoads: [],
 };
 
 // ─── DOM элементы ─────────────────────────────────────────────────────────────
@@ -140,17 +143,14 @@ function dispatchNext() {
 }
 
 // ─── Обработка файлов ─────────────────────────────────────────────────────────
-async function processFiles(fileList) {
+// Главная точка входа для загрузки файлов (из кнопки и drag&drop).
+// Файлы, отобранные по расширению, ставятся в очередь загрузок. Если обработка
+// уже идёт, они дождутся её завершения — это исключает потерю/сброс результатов.
+function processFiles(fileList) {
   const supported = [];
-  const unsupportedNames = [];
-
   for (const file of fileList) {
     const ext = file.name.split('.').pop().toLowerCase();
-    if (CONFIG.SUPPORTED_EXT.has(ext)) {
-      supported.push(file);
-    } else {
-      unsupportedNames.push(file.name);
-    }
+    if (CONFIG.SUPPORTED_EXT.has(ext)) supported.push(file);
   }
 
   if (supported.length === 0) {
@@ -158,8 +158,22 @@ async function processFiles(fileList) {
     return;
   }
 
-  // Настройка прогона: НЕ сбрасываем прошлые результаты — новые файлы ДОБАВЛЯЮТСЯ к таблице.
-  // Кнопка «Очистить» полностью сбрасывает всё.
+  state.pendingLoads.push(supported);
+
+  // Если сейчас ничего не обрабатывается — запускаем обработку следующей загрузки.
+  if (!state.isProcessing) {
+    runNextLoad();
+  }
+}
+
+// Запускает очередную загрузку из очереди. Результаты НЕ сбрасывают прошлые —
+// новые файлы добавляются к уже обработанным. Кнопка «Очистить» сбрасывает всё.
+function runNextLoad() {
+  if (state.pendingLoads.length === 0) return;
+
+  const supported = state.pendingLoads.shift();
+  if (supported.length === 0) { runNextLoad(); return; }
+
   state.processedFiles = 0;
   state.totalFiles = supported.length;
   state.startTime = performance.now();
@@ -172,7 +186,7 @@ async function processFiles(fileList) {
   dom.progressSection.classList.remove('hidden');
   dom.emptyState.classList.add('hidden');
   dom.resultSection.classList.remove('hidden');
-  // Очищаем тело таблицы только при первой загрузке; при добавлении файлов — дополняем
+  // Очищаем <tbody> только при самой первой загрузке; при добавлении файлов — дополняем.
   if (state.allResults.length === 0) dom.tableBody.innerHTML = '';
   dom.statsBar.classList.remove('hidden');
   dom.btnClear.disabled = false;
@@ -180,23 +194,21 @@ async function processFiles(fileList) {
 
   updateProgress();
 
-  // Разбиваем на батчи и читаем заголовки асинхронно
+  // Разбиваем на батчи и читаем заголовки асинхронно.
   const batches = [];
   for (let i = 0; i < supported.length; i += CONFIG.BATCH_SIZE) {
     batches.push(supported.slice(i, i + CONFIG.BATCH_SIZE));
   }
 
-  for (const batch of batches) {
-    const batchIdx = globalBatchIndex++;
-    const batchFiles = await readBatchHeaders(batch);
-    taskQueue.push({ files: batchFiles, batchIndex: batchIdx });
-  }
-
-  // Запускаем воркеры
-  dispatchNext();
-
-  // Сбрасываем input, чтобы можно было выбрать те же файлы повторно
-  dom.fileInput.value = '';
+  const run = async () => {
+    for (const batch of batches) {
+      const batchIdx = globalBatchIndex++;
+      const batchFiles = await readBatchHeaders(batch);
+      taskQueue.push({ files: batchFiles, batchIndex: batchIdx });
+    }
+    dispatchNext();
+  };
+  run();
 }
 
 /**
@@ -272,6 +284,11 @@ function onAllDone() {
   dom.progressText.textContent = `✓ Готово: ${state.totalFiles} файлов за ${elapsed}с`;
 
   showToast(`Обработано ${state.totalFiles} файлов за ${elapsed}с`, 'success');
+
+  // Если во время обработки поступили новые файлы — сразу обрабатываем их.
+  if (state.pendingLoads.length > 0) {
+    runNextLoad();
+  }
 }
 
 function updateStatsBadges() {
@@ -533,15 +550,21 @@ function initEventListeners() {
 
   dom.dropZone.addEventListener('click', () => dom.fileInput.click());
 
-  // Выбор файлов (или папки через drag&drop — браузер сам разворачивает файлы из папки)
-  dom.fileInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
+  // Выбор файлов (или папки через drag&drop — браузер сам разворачивает файлы из папки).
+  // fileInput.value сбрасывается здесь, чтобы повторный выбор того же файла снова срабатывал.
+  dom.fileInput.addEventListener('change', e => {
+    if (e.target.files.length) processFiles(e.target.files);
+    e.target.value = '';
+  });
 
   dom.btnFiles.addEventListener('click', (e) => { e.stopPropagation(); dom.fileInput.click(); });
 
-  // Очистка
+  // Очистка: сбрасываем всё, включая очередь отложенных загрузок, чтобы после
+  // очистки не всплыли файлы, поставленные в очередь во время обработки.
   dom.btnClear.addEventListener('click', () => {
     state.allResults = [];
     state.filteredResults = [];
+    state.pendingLoads = [];
     dom.tableBody.innerHTML = '';
     dom.emptyState.classList.remove('hidden');
     dom.resultSection.classList.add('hidden');
