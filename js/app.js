@@ -39,41 +39,41 @@ let dom = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   dom = {
-    dropZone:        $('drop-zone'),
-    fileInput:       $('file-input'),
-    folderInput:     $('folder-input'),
-    btnFolder:       $('btn-folder'),
-    btnFiles:        $('btn-files'),
-    btnClear:        $('btn-clear'),
-    btnExport:       $('btn-export'),
+    dropZone: $('drop-zone'),
+    fileInput: $('file-input'),
+    folderInput: $('folder-input'),
+    btnFolder: $('btn-folder'),
+    btnFiles: $('btn-files'),
+    btnClear: $('btn-clear'),
+    btnExport: $('btn-export'),
     progressSection: $('progress-section'),
-    progressBar:     $('progress-bar'),
-    progressText:    $('progress-text'),
-    progressStats:   $('progress-stats'),
-    statsBar:        $('stats-bar'),
-    totalCount:      $('total-count'),
-    okCount:         $('ok-count'),
-    damagedCount:    $('damaged-count'),
-    spoofedCount:    $('spoofed-count'),
-    elapsedTime:     $('elapsed-time'),
-    throughput:      $('throughput'),
-    tableContainer:  $('table-container'),
-    tableBody:       $('table-body'),
-    searchInput:     $('search-input'),
-    filterStatus:    $('filter-status'),
-    sortSelect:      $('sort-select'),
-    pageSizeSelect:  $('page-size-select'),
-    paginationInfo:  $('pagination-info'),
-    btnPrev:         $('btn-prev'),
-    btnNext:         $('btn-next'),
-    workerCount:     $('worker-count'),
-    emptyState:      $('empty-state'),
-    resultSection:   $('result-section'),
-    themeToggle:     $('theme-toggle'),
-    modalOverlay:    $('modal-overlay'),
-    modalTitle:      $('modal-title'),
-    modalBody:       $('modal-body'),
-    modalClose:      $('modal-close'),
+    progressBar: $('progress-bar'),
+    progressText: $('progress-text'),
+    progressStats: $('progress-stats'),
+    statsBar: $('stats-bar'),
+    totalCount: $('total-count'),
+    okCount: $('ok-count'),
+    damagedCount: $('damaged-count'),
+    spoofedCount: $('spoofed-count'),
+    elapsedTime: $('elapsed-time'),
+    throughput: $('throughput'),
+    tableContainer: $('table-container'),
+    tableBody: $('table-body'),
+    searchInput: $('search-input'),
+    filterStatus: $('filter-status'),
+    sortSelect: $('sort-select'),
+    pageSizeSelect: $('page-size-select'),
+    paginationInfo: $('pagination-info'),
+    btnPrev: $('btn-prev'),
+    btnNext: $('btn-next'),
+    workerCount: $('worker-count'),
+    emptyState: $('empty-state'),
+    resultSection: $('result-section'),
+    themeToggle: $('theme-toggle'),
+    modalOverlay: $('modal-overlay'),
+    modalTitle: $('modal-title'),
+    modalBody: $('modal-body'),
+    modalClose: $('modal-close'),
   };
 
   initEventListeners();
@@ -299,7 +299,11 @@ function createRow(r) {
   const fmt = r.format || r.realFormat || r.declaredExt?.toUpperCase() || '?';
   const w = r.width || '—';
   const h = r.height || '—';
-  const dpi = (r.dpiX && r.dpiY && r.dpiX !== 'N/A') ? `${r.dpiX}×${r.dpiY}` : 'N/A';
+  // DPI: показываем только если значение есть и это не 'N/A'
+  const hasDpi = r.dpiX !== null && r.dpiX !== undefined && r.dpiX !== 'N/A';
+  const dpi = hasDpi
+    ? (r.dpiX === r.dpiY ? `${r.dpiX}` : `${r.dpiX}×${r.dpiY}`)
+    : 'N/A';
   const depth = r.bitDepth ? `${r.bitDepth} bpp` : '—';
   const comp = r.compression || '—';
   const size = formatSize(r.fileSize);
@@ -457,7 +461,6 @@ function initEventListeners() {
   dom.fileInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
   dom.folderInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
 
-  dom.btnFolder.addEventListener('click', () => dom.folderInput.click());
   dom.btnFiles.addEventListener('click', () => dom.fileInput.click());
 
   // Очистка

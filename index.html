@@ -26,7 +26,6 @@
   <!-- HEADER -->
   <header class="app-header">
     <div class="header-brand">
-      <div class="brand-icon" aria-hidden="true">🔬</div>
       <div class="brand-text">
         <h1>Image Metadata Reader</h1>
         <p>Побайтовый парсинг · JPG · PNG · BMP · GIF · TIFF · PCX</p>
@@ -35,7 +34,7 @@
     <div class="header-meta">
       <div class="worker-badge" title="Количество активных Web Workers">
         <span class="worker-dot" aria-hidden="true"></span>
-        <span id="worker-count">4</span> воркера
+        <span id="worker-count">4</span>&nbsp;воркера
       </div>
       <button id="theme-toggle" class="btn-icon" title="Переключить тему" aria-label="Переключить тему">☀️</button>
     </div>
@@ -44,10 +43,10 @@
   <!-- UPLOAD -->
   <section class="upload-section" aria-label="Загрузка файлов">
     <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
-         aria-label="Перетащите файлы или папку сюда, или нажмите для выбора">
+         aria-label="Перетащите файлы сюда, или нажмите для выбора">
       <span class="drop-icon" aria-hidden="true">🖼️</span>
-      <h2>Перетащите файлы или папку сюда</h2>
-      <p>Поддерживается до 100 000 файлов. Читаются только заголовки — молниеносно быстро.</p>
+      <h2>Перетащите файлы изображений сюда</h2>
+      <p>Или нажмите кнопку ниже. Поддерживается до 100 000 файлов одновременно — читаются только заголовки.</p>
 
       <div class="format-chips" aria-label="Поддерживаемые форматы">
         <span class="chip">JPEG</span>
@@ -59,19 +58,17 @@
       </div>
 
       <div class="upload-actions">
-        <button id="btn-folder" class="btn btn-primary" type="button">
-          📁 Выбрать папку
-        </button>
-        <button id="btn-files" class="btn btn-secondary" type="button">
+        <button id="btn-files" class="btn btn-primary" type="button">
           🖼️ Выбрать файлы
         </button>
       </div>
 
-      <!-- Скрытые input'ы -->
-      <input id="folder-input" type="file" multiple webkitdirectory directory accept="image/*,.pcx,.tif,.tiff"
-             class="sr-only" aria-label="Выбор папки" />
+      <!-- Скрытый input для файлов -->
       <input id="file-input" type="file" multiple accept=".jpg,.jpeg,.png,.bmp,.gif,.tif,.tiff,.pcx"
              class="sr-only" aria-label="Выбор файлов" />
+      <!-- Скрытый input для папки (нужен только для обратной совместимости кода) -->
+      <input id="folder-input" type="file" multiple webkitdirectory directory
+             class="sr-only" aria-label="Выбор папки (скрыт)" />
     </div>
   </section>
 
@@ -172,7 +169,7 @@
       <div id="empty-state" class="empty-state">
         <div class="empty-icon" aria-hidden="true">📂</div>
         <h3>Файлы ещё не загружены</h3>
-        <p>Выберите папку или файлы изображений выше</p>
+        <p>Выберите файлы изображений выше</p>
       </div>
 
       <!-- Scroll container for table -->

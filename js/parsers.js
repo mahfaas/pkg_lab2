@@ -164,16 +164,22 @@ function parseJPEG(buf, fileSize) {
     const dataStart = offset + 4;
 
     // APP0 — JFIF
+    // Структура JFIF APP0: "JFIF\0"[5] + major[1] + minor[1] + units[1] + Xdensity[2] + Ydensity[2]
+    // Итого: dataStart+0..4 = 'JFIF\0', +5 = major, +6 = minor, +7 = units, +8..9 = Xdensity, +10..11 = Ydensity
     if (marker === 0xE0 && segLen >= 16) {
       const id = String.fromCharCode(buf[dataStart], buf[dataStart+1], buf[dataStart+2], buf[dataStart+3]);
       if (id === 'JFIF') {
-        const units = buf[dataStart + 5];
-        const xDens = readU16BE(buf, dataStart + 6);
-        const yDens = readU16BE(buf, dataStart + 8);
+        const units = buf[dataStart + 7];              // 0=нет единиц, 1=DPI, 2=DPCM
+        const xDens = readU16BE(buf, dataStart + 8);   // Xdensity (big-endian)
+        const yDens = readU16BE(buf, dataStart + 10);  // Ydensity (big-endian)
         dpiUnits = units;
-        if (units === 1) { dpiX = xDens; dpiY = yDens; }
-        else if (units === 2) { dpiX = Math.round(xDens * 2.54); dpiY = Math.round(yDens * 2.54); }
-        else { dpiX = xDens; dpiY = yDens; }
+        if (units === 1) {
+          dpiX = xDens; dpiY = yDens;                  // уже в DPI
+        } else if (units === 2) {
+          dpiX = Math.round(xDens * 2.54);             // DPCM → DPI (*2.54)
+          dpiY = Math.round(yDens * 2.54);
+        }
+        // units=0: плотность задаёт только соотношение сторон пикселя, не DPI — оставляем null
       }
     }
 
@@ -237,8 +243,8 @@ function parseJPEG(buf, fileSize) {
   return {
     format: 'JPEG',
     width, height,
-    dpiX: dpiX || 72,
-    dpiY: dpiY || 72,
+    dpiX: dpiX !== null ? dpiX : 'N/A',
+    dpiY: dpiY !== null ? dpiY : 'N/A',
     bitDepth: bitsPerPixel,
     colorType: colorTypeMap[components] || `${components} канала`,
     compression: compressionMap[sofMarker] || `SOF(${sofMarker ? sofMarker.toString(16) : '?'})`,
@@ -347,8 +353,9 @@ function parseBMP(buf, fileSize) {
   const hasPalette = bitCount <= 8;
   const paletteColors = clrUsed > 0 ? clrUsed : (hasPalette ? (1 << bitCount) : 0);
 
-  // Валидация размера файла
-  const valid = fileSize === 0 || bfSize <= fileSize + 2; // небольшой допуск
+  // Валидация размера файла: bfSize в заголовке — задекларированный полный размер файла.
+  // Если реальный размер меньше — файл усечён.
+  const valid = fileSize === 0 || fileSize >= bfSize;
 
   return {
     format: 'BMP',
