@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Metadata Reader — Побайтовый анализ изображений</title>
+  <meta name="description" content="Веб-приложение для чтения метаданных изображений (JPG, PNG, BMP, GIF, TIFF, PCX) методом ручного побайтового парсинга заголовков без сторонних библиотек." />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL ══════ -->
+<div id="modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modal-title" class="modal-title">Детали файла</span>
+      <button id="modal-close" class="modal-close" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="modal-body" class="modal-body"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ APP ════════ -->
+<div class="app-wrapper">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-icon" aria-hidden="true">🔬</div>
+      <div class="brand-text">
+        <h1>Image Metadata Reader</h1>
+        <p>Побайтовый парсинг · JPG · PNG · BMP · GIF · TIFF · PCX</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <div class="worker-badge" title="Количество активных Web Workers">
+        <span class="worker-dot" aria-hidden="true"></span>
+        <span id="worker-count">4</span> воркера
+      </div>
+      <button id="theme-toggle" class="btn-icon" title="Переключить тему" aria-label="Переключить тему">☀️</button>
+    </div>
+  </header>
+
+  <!-- UPLOAD -->
+  <section class="upload-section" aria-label="Загрузка файлов">
+    <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
+         aria-label="Перетащите файлы или папку сюда, или нажмите для выбора">
+      <span class="drop-icon" aria-hidden="true">🖼️</span>
+      <h2>Перетащите файлы или папку сюда</h2>
+      <p>Поддерживается до 100 000 файлов. Читаются только заголовки — молниеносно быстро.</p>
+
+      <div class="format-chips" aria-label="Поддерживаемые форматы">
+        <span class="chip">JPEG</span>
+        <span class="chip">PNG</span>
+        <span class="chip">BMP</span>
+        <span class="chip">GIF</span>
+        <span class="chip">TIFF</span>
+        <span class="chip">PCX</span>
+      </div>
+
+      <div class="upload-actions">
+        <button id="btn-folder" class="btn btn-primary" type="button">
+          📁 Выбрать папку
+        </button>
+        <button id="btn-files" class="btn btn-secondary" type="button">
+          🖼️ Выбрать файлы
+        </button>
+      </div>
+
+      <!-- Скрытые input'ы -->
+      <input id="folder-input" type="file" multiple webkitdirectory directory accept="image/*,.pcx,.tif,.tiff"
+             class="sr-only" aria-label="Выбор папки" />
+      <input id="file-input" type="file" multiple accept=".jpg,.jpeg,.png,.bmp,.gif,.tif,.tiff,.pcx"
+             class="sr-only" aria-label="Выбор файлов" />
+    </div>
+  </section>
+
+  <!-- PROGRESS -->
+  <section id="progress-section" class="progress-section hidden" aria-live="polite" aria-label="Прогресс обработки">
+    <div class="progress-header">
+      <span id="progress-text" class="progress-text">Подготовка…</span>
+      <span id="progress-stats" class="progress-stats"></span>
+    </div>
+    <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <div id="stats-bar" class="stats-bar hidden" aria-label="Статистика обработки">
+    <div class="stat-card">
+      <span class="stat-label">Всего файлов</span>
+      <span id="total-count" class="stat-value accent-color">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Успешно</span>
+      <span id="ok-count" class="stat-value ok-color">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Повреждены</span>
+      <span id="damaged-count" class="stat-value damaged-color">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Подмена расш.</span>
+      <span id="spoofed-count" class="stat-value spoofed-color">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Время обработки</span>
+      <span id="elapsed-time" class="stat-value" style="color:var(--text-primary);font-size:20px">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Пропускная способность</span>
+      <span id="throughput" class="stat-value" style="color:var(--text-primary);font-size:20px">—</span>
+    </div>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div class="action-bar">
+    <button id="btn-export" class="btn btn-success" type="button" disabled aria-label="Экспорт в CSV">
+      ⬇️ Экспорт CSV
+    </button>
+    <button id="btn-clear" class="btn btn-danger" type="button" disabled aria-label="Очистить результаты">
+      🗑️ Очистить
+    </button>
+  </div>
+
+  <!-- RESULT SECTION -->
+  <section id="result-section" class="result-section hidden" aria-label="Результаты анализа">
+
+    <!-- Toolbar -->
+    <div class="toolbar" role="toolbar" aria-label="Управление таблицей">
+      <div class="toolbar-left">
+        <div class="search-wrapper">
+          <span class="search-icon" aria-hidden="true">🔍</span>
+          <input id="search-input" class="search-input" type="search"
+                 placeholder="Поиск по имени или формату…"
+                 aria-label="Поиск по файлам" />
+        </div>
+
+        <select id="filter-status" class="select-control" aria-label="Фильтр по статусу">
+          <option value="all">Все файлы</option>
+          <option value="ok">✅ Только OK</option>
+          <option value="damaged">⚠️ Повреждённые</option>
+          <option value="spoofed">🔄 Подменённые</option>
+        </select>
+      </div>
+
+      <div class="toolbar-right">
+        <select id="sort-select" class="select-control" aria-label="Сортировка">
+          <option value="fileName:asc">↑ Имя файла</option>
+          <option value="fileName:desc">↓ Имя файла</option>
+          <option value="fileSize:desc">↓ Размер файла</option>
+          <option value="fileSize:asc">↑ Размер файла</option>
+          <option value="width:desc">↓ Ширина</option>
+          <option value="bitDepth:desc">↓ Глубина цвета</option>
+          <option value="format:asc">↑ Формат</option>
+        </select>
+
+        <select id="page-size-select" class="select-control" aria-label="Строк на страницу">
+          <option value="50">50 / стр.</option>
+          <option value="100" selected>100 / стр.</option>
+          <option value="250">250 / стр.</option>
+          <option value="500">500 / стр.</option>
+          <option value="all">Все</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div id="table-container" class="table-container" role="region" aria-label="Таблица метаданных">
+      <!-- Empty state -->
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon" aria-hidden="true">📂</div>
+        <h3>Файлы ещё не загружены</h3>
+        <p>Выберите папку или файлы изображений выше</p>
+      </div>
+
+      <!-- Scroll container for table -->
+      <div class="table-scroll">
+        <table class="data-table" role="table" aria-label="Метаданные изображений">
+          <thead>
+            <tr>
+              <th scope="col">Имя файла</th>
+              <th scope="col">Формат</th>
+              <th scope="col">Размер (px)</th>
+              <th scope="col">Разрешение (DPI)</th>
+              <th scope="col">Глубина цвета</th>
+              <th scope="col">Сжатие</th>
+              <th scope="col">Размер файла</th>
+              <th scope="col">Статус</th>
+              <th scope="col">Детали</th>
+            </tr>
+          </thead>
+          <tbody id="table-body" aria-live="polite">
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination" role="navigation" aria-label="Навигация по страницам">
+        <span id="pagination-info" class="pagination-info">0 записей</span>
+        <div class="pagination-controls">
+          <button id="btn-prev" class="btn-page" type="button" aria-label="Предыдущая страница" disabled>‹</button>
+          <button id="btn-next" class="btn-page" type="button" aria-label="Следующая страница" disabled>›</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /.app-wrapper -->
+
+<script src="./js/parsers.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
